@@ -1,16 +1,8 @@
-# This is a sample Python script.
+from qiskit import QuantumCircuit, transpile
+from qiskit.test.mock.backends import FakeBrooklyn
 
-# Press Shift+F10 to execute it or replace it with your code.
-# Press Double Shift to search everywhere for classes, files, tool windows, actions, and settings.
-
-
-def print_hi(name):
-    # Use a breakpoint in the code line below to debug your script.
-    print(f'Hi, {name}')  # Press Ctrl+F8 to toggle the breakpoint.
-
-
-# Press the green button in the gutter to run the script.
-if __name__ == '__main__':
-    print_hi('PyCharm')
-
-# See PyCharm help at https://www.jetbrains.com/help/pycharm/
+path = './emtec21/benchmarks/original/circuit.qasm'
+qc = QuantumCircuit.from_qasm_file(path=path)
+qc_transpiled = transpile(qc, backend=FakeBrooklyn())
+filename = './emtec21/benchmarks/mapped/circuit.qasm'
+qc_transpiled.qasm(filename=filename)
