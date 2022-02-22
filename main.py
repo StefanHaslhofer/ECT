@@ -53,8 +53,8 @@ def optain_swaps(front_layer, coupling_graph):
 
 
 # calculate the cumulative distance between all elements of the front layer and their successors after the swap
-def calc_swap_score():
-    return ""
+def calc_swap_score(swap, mapping, coupling_graph):
+    return 1 # TODO implement heurisitic
 
 
 def sabre_swap(front_layer, executed_gates, mapping, dag, coupling_graph):
@@ -84,11 +84,12 @@ def sabre_swap(front_layer, executed_gates, mapping, dag, coupling_graph):
         # swap bits if nothing can be executed
         else:
             score = []
-            swap_candidates = optain_swaps(front_layer, coupling_graph)
-            map_helper = []
 
-            for swap in swap_candidates:
-                print('a')
+            for swap in optain_swaps(front_layer, coupling_graph):
+                score.append((swap, calc_swap_score(swap, mapping, coupling_graph)))
+
+            min_score = min(score, key=lambda s: s[1])
+            # TODO implement swap
 
     return mapping
 
