@@ -1,6 +1,9 @@
 from qiskit import QuantumCircuit
+from qiskit.circuit.library import SwapGate
 from qiskit.converters import circuit_to_dag
+from qiskit.dagcircuit import DAGCircuit
 from qiskit.transpiler import CouplingMap
+from qiskit.transpiler import Layout
 
 # coupling of a brooklyn device as a list representation
 coupling = [[0, 1], [1, 2], [2, 3]]
@@ -28,7 +31,7 @@ def q_transpile(c):
     dag = circuit_to_dag(ghz)
     front_layer = dag.front_layer()
 
-    mapping = sabre_swap(front_layer, [], mapping, dag, coupling_map)
+    mapping = sabre_swap(front_layer, mapping, dag, coupling_map)
     return qc_transpiled
 
 
@@ -47,17 +50,60 @@ def optain_swaps(front_layer, coupling_graph):
             for i, n in enumerate(coupling_graph.distance_matrix[qubit.index]):
                 # swap possible if distance is 1
                 if n == 1:
-                    swaps.append((qubit.index, i))
+                    swaps.append((qubit.index, i, gate))
 
     return swaps
 
 
 # calculate the cumulative distance between all elements of the front layer and their successors after the swap
 def calc_swap_score(swap, mapping, coupling_graph):
-    return 1 # TODO implement heurisitic
+    return 1  # TODO implement heurisitic
 
 
-def sabre_swap(front_layer, executed_gates, mapping, dag, coupling_graph):
+def swap_qubits(dag, swap):
+    # create a copy of the dag
+    new_dag = DAGCircuit()
+    for qreg in dag.qregs.values():
+        new_dag.add_qreg(qreg)
+    for creg in dag.cregs.values():
+        new_dag.add_creg(creg)
+
+    # generate a copy of out current layout
+    current_layout = Layout.generate_trivial_layout(dag.qregs['q']).copy()
+
+    # iterate over all layers
+    for layer in dag.serial_layers():
+        subdag = layer['graph']
+
+        # create empty dag that will get merged with the copy of the original one
+        swap_layer = DAGCircuit()
+        swap_layer.add_qreg(dag.qregs['q'])
+
+        # TODO this check does not work yet
+        # apply swap if gate that needs the swap is in the current layer
+        if swap[2] in subdag.op_nodes():
+            swap_layer.apply_operation_back(SwapGate(),
+                                            qargs=[current_layout[swap[0]], current_layout[swap[1]]],
+                                            cargs=[])
+
+            # insert swap into new dag
+            order = current_layout.reorder_bits(new_dag.qubits)
+            new_dag.compose(swap_layer, qubits=order)
+
+            # insert swap into layout
+            current_layout.swap(swap[0], swap[1])
+
+        # insert old layer into the new data
+        order = current_layout.reorder_bits(new_dag.qubits)
+        new_dag.compose(subdag, qubits=order)
+
+    return new_dag
+    # swap_layer.add_qreg(canonical_register)
+
+
+def sabre_swap(front_layer, mapping, dag, coupling_graph):
+    executed_gates = []
+
     # iterate until no gates are left to execute
     # gates in the front_layer do not have any dependencies on other previous gates
     while front_layer:
@@ -88,7 +134,8 @@ def sabre_swap(front_layer, executed_gates, mapping, dag, coupling_graph):
             for swap in optain_swaps(front_layer, coupling_graph):
                 score.append((swap, calc_swap_score(swap, mapping, coupling_graph)))
 
-            min_score = min(score, key=lambda s: s[1])
+            min_swap = min(score, key=lambda s: s[1])
+            dag = swap_qubits(dag, min_swap[0])
             # TODO implement swap
 
     return mapping
