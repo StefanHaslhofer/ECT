@@ -76,7 +76,9 @@ class Sabre(TransformationPass):
                     # x = virtual qubit
                     # layout._v2p[x] = get physical qubit from virtual
                     # dag.qregs['q'][layout._v2p[x]] = get physical quantum register from qubit
-                    new_dag.apply_operation_back(op=gate.op, qargs=list(map(lambda x: dag.qregs['q'][layout._v2p[x]], gate.qargs)), cargs=gate.cargs)
+                    new_dag.apply_operation_back(op=gate.op,
+                                                 qargs=list(map(lambda x: dag.qregs['q'][layout._v2p[x]], gate.qargs)),
+                                                 cargs=gate.cargs)
                     # remove executed gates
                     front_layer.remove(gate)
                     executed_gates.append(gate)
@@ -95,15 +97,17 @@ class Sabre(TransformationPass):
                 # obtain all possible swaps and their score based on a heuristic
                 for swap in self.optain_swaps(front_layer, layout, coupling_graph):
                     score.append(
-                        {'op': swap, 'score': self.calc_swap_score(swap, layout.copy(), front_layer, coupling_graph)})
+                        {'op': swap,
+                         'distance': self.calc_swap_score(swap, layout.copy(), front_layer, coupling_graph)})
 
                 # chose the swap action with the minimal distance (score) after the gates switched position
-                min_swap = min(score, key=lambda s: s['score'])['op']
+                min_swap = min(score, key=lambda s: s['distance'])['op']
                 # get physical bits by index of logical bit
-                swap_node = DAGOpNode(op=SwapGate(), qargs=[layout._p2v[min_swap['q1'].index], layout._p2v[min_swap['q2'].index]])
+                swap_node = DAGOpNode(op=SwapGate(), qargs=[
+                    dag.qregs['q'][layout._v2p[min_swap['q1']]], dag.qregs['q'][layout._v2p[min_swap['q2']]]
+                ])
                 # add a swap to the new dag
                 new_dag.apply_operation_back(swap_node.op, swap_node.qargs, swap_node.cargs)
-                new_dag.draw(scale=0.7, filename=None, style='color')
                 # swap logical bits
                 layout.swap(min_swap['q1'], min_swap['q2'])
 
