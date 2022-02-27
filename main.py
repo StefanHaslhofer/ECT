@@ -1,29 +1,30 @@
-from qiskit import QuantumCircuit
+from qiskit import QuantumCircuit, QuantumRegister
 from qiskit.converters import circuit_to_dag
 from qiskit.transpiler import PassManager, CouplingMap
 from sabre import Sabre
 
 # coupling of a brooklyn device as a list representation
-coupling = [[0, 1], [1, 2], [2, 3]]
+coupling = [[0, 1], [1, 2], [2, 3], [3, 4], [4, 5], [5, 6]]
 
 #####path = './original/ghz_state-5.qasm'
 #####qc = QuantumCircuit.from_qasm_file(path=path)
 
 pm = PassManager()
 
-qc = QuantumCircuit(4, 4)
-qc.h(0)
-qc.cx(0, 1)
-qc.cx(1, 2)
-qc.cx(0, 3)
-qc.barrier()
-qc.measure(range(3), range(3))
-print(qc.draw(output='text'))
+q = QuantumRegister(7, 'q')
+in_circ = QuantumCircuit(q)
+in_circ.h(q[0])
+in_circ.cx(q[0], q[4])
+in_circ.cx(q[2], q[3])
+in_circ.cx(q[6], q[1])
+in_circ.cx(q[5], q[0])
+in_circ.cx(q[5], q[0])
+print(in_circ.draw(output='text'))
 
 coupling_map = CouplingMap(couplinglist=coupling)
 pm.append([Sabre(coupling_map)])
 
-qc_transpiled = pm.run(qc)
+qc_transpiled = pm.run(in_circ)
 print(qc_transpiled.draw(output='text'))
 
 ##### print(qc.draw(output='text'))
