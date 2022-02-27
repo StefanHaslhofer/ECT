@@ -1,6 +1,4 @@
-from qiskit import QuantumCircuit
 from qiskit.circuit.library import SwapGate
-from qiskit.converters import circuit_to_dag
 from qiskit.dagcircuit import DAGOpNode
 from qiskit.transpiler import TransformationPass
 from qiskit.transpiler import Layout
@@ -73,7 +71,12 @@ class Sabre(TransformationPass):
             if execute_gate_list:
                 for gate in execute_gate_list:
                     # add gate to new dag
-                    new_dag.apply_operation_back(gate.op, gate.qargs, gate.cargs)
+                    # dag.qregs['q'] = original mapping
+                    # layout._v2p = virtual to physical mapping of current layout
+                    # x = virtual qubit
+                    # layout._v2p[x] = get physical qubit from virtual
+                    # dag.qregs['q'][layout._v2p[x]] = get physical quantum register from qubit
+                    new_dag.apply_operation_back(op=gate.op, qargs=list(map(lambda x: dag.qregs['q'][layout._v2p[x]], gate.qargs)), cargs=gate.cargs)
                     # remove executed gates
                     front_layer.remove(gate)
                     executed_gates.append(gate)
