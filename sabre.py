@@ -11,30 +11,43 @@ from qiskit.converters import circuit_to_dag, dag_to_circuit
 # Devices,” https://pypi.org/project/quantum-qubit-mapping/, pp. 4–7, 2019
 class Sabre(TransformationPass):
 
-    def __init__(self, coupling_map):
+    def __init__(self, coupling_map, layout_strategy='trivial'):
         super().__init__()
         self.coupling_map = coupling_map
         self.initial_mapping: Layout
+        self.layout_strategy = layout_strategy
 
-    def generate_layout(self, dag):
+    #TODO
+    def generate_heuristic_layout(self, dag):
         layout: Layout
 
-
-
         return layout
+
+    # return the layout of the sabre-swaps output and use it as input later
+    # due to optimized swaps we can assume that the output-layout is better than the trivial approach
+    def generate_sabre_layout(self, dag, front_layer, layout):
+        return self.sabre_swap(front_layer, layout, dag, self.coupling_map)[1]
 
     def run(self, dag):
         # append overflow register
         self.fillup_qregs(dag)
-
-        # get the initial layout from the dag
-        layout = Layout.generate_trivial_layout(*dag.qregs.values())
-        self.initial_layout = layout.copy()
-        #layout = self.generate_layout(dag)
-
         front_layer = dag.front_layer()
 
-        return self.sabre_swap(front_layer, layout, dag, self.coupling_map)
+        layout: Layout
+
+        # get the initial layout from the dag based on different strategies
+        if(self.layout_strategy == 'trivial'):
+            layout = Layout.generate_trivial_layout(*dag.qregs.values())
+        elif(self.layout_strategy == 'sabre'):
+            # we need a sabre-swap run with an initial trivial layout in order to use an optimized mapping
+            layout = Layout.generate_trivial_layout(*dag.qregs.values())
+            layout = self.generate_sabre_layout(dag, front_layer.copy(), layout)
+        elif(self.layout_strategy == 'heuristic'):
+            layout = Layout.generate_trivial_layout(*dag.qregs.values())
+
+        self.initial_layout = layout.copy()
+
+        return self.sabre_swap(front_layer, layout, dag, self.coupling_map)[0]
 
     # map unused qubits to an overflow register
     # NOTE: I was stuck here, source code from Elias Foramitti brought me the idea
@@ -134,4 +147,4 @@ class Sabre(TransformationPass):
                 # swap logical bits
                 layout.swap(min_swap['q1'], min_swap['q2'])
 
-        return new_dag
+        return new_dag, layout

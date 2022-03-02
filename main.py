@@ -1,3 +1,5 @@
+import os
+
 from qiskit import QuantumCircuit, QuantumRegister, transpile, ClassicalRegister
 from qiskit.transpiler import PassManager, CouplingMap, Layout
 from qiskit.converters import circuit_to_dag, dag_to_circuit
@@ -50,9 +52,8 @@ coupling = [[0, 1], [0, 10], [1, 0], [1, 2], [2, 1], [2, 3], [3, 2], [3, 4], [4,
             [56, 57], [57, 56], [57, 58], [58, 57], [58, 59], [59, 58], [59, 60], [60, 53], [60, 59], [60, 61],
             [61, 60], [61, 62], [62, 61], [62, 63], [63, 62], [63, 64], [64, 54], [64, 63]]
 
-# coupling of a brooklyn device as a list representation
-couplingTest = [[0, 1], [0, 1], [1, 2], [2, 1], [2, 3], [3, 2], [3, 4], [4, 3], [4, 5], [5, 4], [5, 6], [6, 5]]
 filename = "adder-3.qasm"
+input_path = './original/' + filename
 
 q = QuantumRegister(7, 'q')
 meas = ClassicalRegister(7, 'meas')
@@ -66,24 +67,27 @@ in_circ.cx(3, 0)
 in_circ.barrier(0, 1, 2, 3, 4, 5, 6)
 in_circ.measure(0, 0)
 
-input_path = './original/' + filename
-
-ownSolution = True
-qc_transpiled = {}
 
 """ own implementation """
 output_path1 = './mapped/own/' + filename
 coupling_map = CouplingMap(couplinglist=coupling)
+
 # get quantum circuit from file
 qc = QuantumCircuit.from_qasm_file(path=input_path)
-mapper = Sabre(coupling_map)
+mapper = Sabre(coupling_map, layout_strategy='sabre')
 pm.append(mapper)
 qc_transpiled = pm.run(in_circ)
 
 print(qc_transpiled.draw(output='text'))
 layout_comment = get_layout_description_comment(mapper.initial_layout, circuit_to_dag(qc_transpiled))
-print(layout_comment)
-qc_transpiled.qasm(filename=output_path1)
+
+qasm = qc_transpiled.qasm()
+qasm = qasm.replace('\n', '\n' + layout_comment + '\n', 1)
+
+with open(output_path1, "w+") as file:
+    file.write(qasm)
+file.close()
+
 print("Own cost : ", get_circuit_cost(qc_transpiled))
 
 """ qiskit standard """
