@@ -1,7 +1,9 @@
+from qiskit import QuantumCircuit, QuantumRegister
 from qiskit.circuit.library import SwapGate
 from qiskit.dagcircuit import DAGOpNode
 from qiskit.transpiler import TransformationPass
 from qiskit.transpiler import Layout
+from qiskit.converters import circuit_to_dag, dag_to_circuit
 
 
 # algorithm was inspired by
@@ -14,11 +16,20 @@ class Sabre(TransformationPass):
         self.coupling_map = coupling_map
 
     def run(self, dag):
+        # append overflow register
+        self.fillup_qregs(dag)
+
         # get the initial layout from the dag
-        layout = Layout.generate_trivial_layout(dag.qregs["q"])
+        layout = Layout.generate_trivial_layout(*dag.qregs.values())
         front_layer = dag.front_layer()
 
         return self.sabre_swap(front_layer, layout, dag, self.coupling_map)
+
+    # map unused qubits to an overflow register
+    # NOTE: I was stuck here, source code from Elias Foramitti brought me the idea
+    def fillup_qregs(self, dag):
+        reg = QuantumRegister(len(self.coupling_map.physical_qubits) - len(dag.qubits), 'r')
+        dag.add_qreg(reg)
 
     # returns true if gate is a one-qubit-gate or its two qubits are connected
     def qubits_connected(self, gate, coupling_graph, layout):
@@ -71,13 +82,13 @@ class Sabre(TransformationPass):
             if execute_gate_list:
                 for gate in execute_gate_list:
                     # add gate to new dag
-                    # dag.qregs['q'] = original mapping
+                    # dag.qregs['q'] = register by name
                     # layout._v2p = virtual to physical mapping of current layout
                     # x = virtual qubit
-                    # layout._v2p[x] = get physical qubit from virtual
-                    # dag.qregs['q'][layout._v2p[x]] = get physical quantum register from qubit
+                    #### layout._v2p[x] = get physical qubit from virtual
+                    #### dag.qregs['q'][layout._v2p[x]] = get physical quantum register from qubit
                     new_dag.apply_operation_back(op=gate.op,
-                                                 qargs=list(map(lambda x: dag.qregs['q'][layout._v2p[x]], gate.qargs)),
+                                                 qargs=list(map(lambda x: dag.qregs[x.register.name][x.index], gate.qargs)),
                                                  cargs=gate.cargs)
                     # remove executed gates
                     front_layer.remove(gate)
@@ -104,7 +115,8 @@ class Sabre(TransformationPass):
                 min_swap = min(score, key=lambda s: s['distance'])['op']
                 # get physical bits by index of logical bit
                 swap_node = DAGOpNode(op=SwapGate(), qargs=[
-                    dag.qregs['q'][layout._v2p[min_swap['q1']]], dag.qregs['q'][layout._v2p[min_swap['q2']]]
+                    dag.qregs[min_swap['q1'].register.name][min_swap['q1'].index],
+                    dag.qregs[min_swap['q2'].register.name][min_swap['q2'].index]
                 ])
                 # add a swap to the new dag
                 new_dag.apply_operation_back(swap_node.op, swap_node.qargs, swap_node.cargs)
