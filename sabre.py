@@ -14,6 +14,14 @@ class Sabre(TransformationPass):
     def __init__(self, coupling_map):
         super().__init__()
         self.coupling_map = coupling_map
+        self.initial_mapping: Layout
+
+    def generate_layout(self, dag):
+        layout: Layout
+
+
+
+        return layout
 
     def run(self, dag):
         # append overflow register
@@ -21,6 +29,9 @@ class Sabre(TransformationPass):
 
         # get the initial layout from the dag
         layout = Layout.generate_trivial_layout(*dag.qregs.values())
+        self.initial_layout = layout.copy()
+        #layout = self.generate_layout(dag)
+
         front_layer = dag.front_layer()
 
         return self.sabre_swap(front_layer, layout, dag, self.coupling_map)
@@ -82,25 +93,25 @@ class Sabre(TransformationPass):
             if execute_gate_list:
                 for gate in execute_gate_list:
                     # add gate to new dag
-                    # dag.qregs['q'] = register by name
+                    # dag.qubits = physical qubits
                     # layout._v2p = virtual to physical mapping of current layout
                     # x = virtual qubit
-                    #### layout._v2p[x] = get physical qubit from virtual
-                    #### dag.qregs['q'][layout._v2p[x]] = get physical quantum register from qubit
                     new_dag.apply_operation_back(op=gate.op,
-                                                 qargs=list(map(lambda x: dag.qregs[x.register.name][x.index], gate.qargs)),
+                                                 qargs=list(map(lambda x: dag.qubits[layout._v2p[x]], gate.qargs)),
                                                  cargs=gate.cargs)
                     # remove executed gates
                     front_layer.remove(gate)
                     executed_gates.append(gate)
                     # iterate over successors and check if dependencies are resolved
                     # if so add them to the front layer as they are ready for execution
-                    # filter by name=cx: due to specification only care about cnot
-                    for succ in list(filter(lambda s: s.name == 'cx', dag.successors(gate))):
-                        preds = list(filter(lambda s: s.name == 'cx', dag.predecessors(succ)))
+                    # filter by instance of: ignore DAGInNodes and DAGOutNodes (they count as predecessors/successors)
+                    for succ in list(filter(lambda s: isinstance(s, DAGOpNode), dag.successors(gate))):
+                        preds = list(filter(lambda p: isinstance(p, DAGOpNode), dag.predecessors(succ)))
+
                         # only add the successor-element to the front-layer if all its predecessors were already executed
                         if set(preds).issubset(executed_gates):
                             front_layer.append(succ)
+
             # swap bits if nothing can be executed
             else:
                 score = []
@@ -115,13 +126,12 @@ class Sabre(TransformationPass):
                 min_swap = min(score, key=lambda s: s['distance'])['op']
                 # get physical bits by index of logical bit
                 swap_node = DAGOpNode(op=SwapGate(), qargs=[
-                    dag.qregs[min_swap['q1'].register.name][min_swap['q1'].index],
-                    dag.qregs[min_swap['q2'].register.name][min_swap['q2'].index]
+                    dag.qubits[layout._v2p[min_swap['q1']]],
+                    dag.qubits[layout._v2p[min_swap['q2']]]
                 ])
                 # add a swap to the new dag
                 new_dag.apply_operation_back(swap_node.op, swap_node.qargs, swap_node.cargs)
                 # swap logical bits
                 layout.swap(min_swap['q1'], min_swap['q2'])
 
-        # TODO measurements are missing
         return new_dag

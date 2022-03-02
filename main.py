@@ -1,10 +1,40 @@
-from qiskit import QuantumCircuit, QuantumRegister, transpile
-from qiskit.converters import circuit_to_dag
-from qiskit.transpiler import PassManager, CouplingMap
+from qiskit import QuantumCircuit, QuantumRegister, transpile, ClassicalRegister
+from qiskit.transpiler import PassManager, CouplingMap, Layout
+from qiskit.converters import circuit_to_dag, dag_to_circuit
 from sabre import Sabre
 from qiskit.test.mock.backends import FakeBrooklyn
 
-# coupling of a brooklyn device as a list representation
+
+# author: Elias Foramitti
+def get_layout_description_comment(layout, dag):
+    physical_qbits = []
+    virtual_bit_mapping = layout.get_virtual_bits()
+    # one could directly take layout.get_virtual_bits().values(),
+    # but that would not necessarily preserve the original ordering
+    # of virtual qubits resulting in a wrong layout description
+    for qreg in dag.qregs.values():
+        for qbit in qreg:
+            physical_qbits.append(virtual_bit_mapping[qbit])
+    return '// i ' + ' '.join(str(i) for i in physical_qbits)
+
+
+# author: Elias Foramitti
+def get_circuit_cost(qc: QuantumCircuit) -> int:
+    instructions = [i[0] for i in qc]
+    cost = 0
+    for i, inst in enumerate(instructions):
+        if inst.name == 'sx' or inst.name == 'x':
+            cost += 1
+        elif inst.name == 'cx':
+            cost += 10
+        elif inst.name == 'swap':
+            cost += 30
+        elif (inst.name != 'rz' and inst.name != 'measure' and inst.name != 'barrier'):
+            print(f"{i}th instruction '{inst.name}' not allowed")
+    return cost
+
+
+pm = PassManager()
 coupling = [[0, 1], [0, 10], [1, 0], [1, 2], [2, 1], [2, 3], [3, 2], [3, 4], [4, 3], [4, 5], [4, 11], [5, 4], [5, 6],
             [6, 5], [6, 7], [7, 6], [7, 8], [8, 7], [8, 9], [8, 12], [9, 8], [10, 0], [10, 13], [11, 4], [11, 17],
             [12, 8], [12, 21], [13, 10], [13, 14], [14, 13], [14, 15], [15, 14], [15, 16], [15, 24], [16, 15], [16, 17],
@@ -20,32 +50,47 @@ coupling = [[0, 1], [0, 10], [1, 0], [1, 2], [2, 1], [2, 3], [3, 2], [3, 4], [4,
             [56, 57], [57, 56], [57, 58], [58, 57], [58, 59], [59, 58], [59, 60], [60, 53], [60, 59], [60, 61],
             [61, 60], [61, 62], [62, 61], [62, 63], [63, 62], [63, 64], [64, 54], [64, 63]]
 
-#####path = './original/ghz_state-5.qasm'
-#####qc = QuantumCircuit.from_qasm_file(path=path)
+# coupling of a brooklyn device as a list representation
+couplingTest = [[0, 1], [0, 1], [1, 2], [2, 1], [2, 3], [3, 2], [3, 4], [4, 3], [4, 5], [5, 4], [5, 6], [6, 5]]
+filename = "adder-3.qasm"
 
-pm = PassManager()
-
-q = QuantumRegister(65, 'q')
-in_circ = QuantumCircuit(q)
+q = QuantumRegister(7, 'q')
+meas = ClassicalRegister(7, 'meas')
+in_circ = QuantumCircuit(q, meas)
 in_circ.h(3)
 in_circ.cx(0, 6)
 in_circ.cx(6, 0)
 in_circ.cx(0, 1)
 in_circ.cx(3, 1)
 in_circ.cx(3, 0)
-print(in_circ.draw(output='text'))
+in_circ.barrier(0, 1, 2, 3, 4, 5, 6)
+in_circ.measure(0, 0)
 
+input_path = './original/' + filename
+
+ownSolution = True
+qc_transpiled = {}
+
+""" own implementation """
+output_path1 = './mapped/own/' + filename
 coupling_map = CouplingMap(couplinglist=coupling)
-pm.append([Sabre(coupling_map)])
-
+# get quantum circuit from file
+qc = QuantumCircuit.from_qasm_file(path=input_path)
+mapper = Sabre(coupling_map)
+pm.append(mapper)
 qc_transpiled = pm.run(in_circ)
+
 print(qc_transpiled.draw(output='text'))
+layout_comment = get_layout_description_comment(mapper.initial_layout, circuit_to_dag(qc_transpiled))
+print(layout_comment)
+qc_transpiled.qasm(filename=output_path1)
+print("Own cost : ", get_circuit_cost(qc_transpiled))
 
-qc_transpiled2 = transpile(in_circ, backend=FakeBrooklyn(), routing_method='sabre')
-print(qc_transpiled2.draw(output='text'))
+""" qiskit standard """
+output_path2 = './mapped/benchmark/' + filename
+qc = QuantumCircuit.from_qasm_file(path=input_path)
+qc_transpiled = transpile(in_circ, backend=FakeBrooklyn())
 
-filename = './mapped/circuit.qasm'
-qc_transpiled.qasm(filename=filename)
-
-filename2 = './mapped/circuit2.qasm'
-qc_transpiled2.qasm(filename=filename2)
+# print(qc_transpiled.draw(output='text'))
+qc_transpiled.qasm(filename=output_path2)
+print("Standard cost: ", get_circuit_cost(qc_transpiled))
