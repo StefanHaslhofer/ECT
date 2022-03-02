@@ -79,11 +79,11 @@ pm.append(mapper)
 qc_transpiled = pm.run(in_circ)
 
 print(qc_transpiled.draw(output='text'))
-layout_comment = get_layout_description_comment(mapper.initial_layout, circuit_to_dag(qc_transpiled))
 
+# add layout comment on top of output-.qasm
+layout_comment = get_layout_description_comment(mapper.initial_layout, circuit_to_dag(qc_transpiled))
 qasm = qc_transpiled.qasm()
 qasm = qasm.replace('\n', '\n' + layout_comment + '\n', 1)
-
 with open(output_path1, "w+") as file:
     file.write(qasm)
 file.close()
