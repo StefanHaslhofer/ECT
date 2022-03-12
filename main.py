@@ -37,7 +37,7 @@ for filename in os.listdir(input_directory):
 
         # get quantum circuit from file
         qc = QuantumCircuit.from_qasm_file(path=input_path)
-        mapper = Sabre(coupling_map, layout_strategy='sabre')
+        mapper = Sabre(coupling_map, layout_strategy='trivial')
         pm.append(mapper)
         qc_transpiled = pm.run(qc)
 
