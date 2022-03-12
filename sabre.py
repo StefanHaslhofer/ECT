@@ -14,7 +14,7 @@ class Sabre(TransformationPass):
     def __init__(self, coupling_map, layout_strategy='trivial'):
         super().__init__()
         self.coupling_map = coupling_map
-        self.initial_mapping: Layout
+        self.initial_layout: Layout = []
         self.layout_strategy = layout_strategy
 
     #TODO not necessary maybe further research
