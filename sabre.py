@@ -1,9 +1,8 @@
-from qiskit import QuantumCircuit, QuantumRegister
+from qiskit import QuantumRegister
 from qiskit.circuit.library import SwapGate
 from qiskit.dagcircuit import DAGOpNode
 from qiskit.transpiler import TransformationPass
 from qiskit.transpiler import Layout
-from qiskit.converters import circuit_to_dag, dag_to_circuit
 
 
 # algorithm was inspired by
@@ -74,7 +73,8 @@ class Sabre(TransformationPass):
                     # swap possible if distance is 1
                     swaps.append({'q1': qubit, 'q2': layout[n], 'gate': gate})
 
-        return swaps
+        # sort the list by q1 and then by q2 index
+        return sorted(swaps, key=lambda s: (s.get('q1').index, s.get('q2').index))
 
     # calculate the cumulative distance between all elements of the front layer and their successors after a
     # potential swap
@@ -139,6 +139,7 @@ class Sabre(TransformationPass):
 
                 # chose the swap action with the minimal distance (score) after the gates switched position
                 min_swap = min(score, key=lambda s: s['distance'])['op']
+                print(min_swap['q1'])
                 # get physical bits by index of logical bit
                 swap_node = DAGOpNode(op=SwapGate(), qargs=[
                     dag.qubits[layout._v2p[min_swap['q1']]],
