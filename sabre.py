@@ -17,11 +17,14 @@ class Sabre(TransformationPass):
         self.initial_mapping: Layout
         self.layout_strategy = layout_strategy
 
-    #TODO
-    def generate_heuristic_layout(self, dag):
+    #TODO not necessary maybe further research
+    def generate_heuristic_layout(self, dag ):
         layout: Layout
 
         return layout
+
+    def circuit_interaction(self, q1, dag):
+        return dag
 
     # return the layout of the sabre-swaps output and use it as input later
     # due to optimized swaps we can assume that the output-layout is better than the trivial approach
@@ -43,14 +46,13 @@ class Sabre(TransformationPass):
             layout = Layout.generate_trivial_layout(*dag.qregs.values())
             layout = self.generate_sabre_layout(dag, front_layer.copy(), layout)
         elif(self.layout_strategy == 'heuristic'):
-            layout = Layout.generate_trivial_layout(*dag.qregs.values())
+            layout = self.generate_heuristic_layout(dag)
 
         self.initial_layout = layout.copy()
 
         return self.sabre_swap(front_layer, layout, dag, self.coupling_map)[0]
 
     # map unused qubits to an overflow register
-    # NOTE: I was stuck here, source code from Elias Foramitti brought me the idea
     def fillup_qregs(self, dag):
         reg = QuantumRegister(len(self.coupling_map.physical_qubits) - len(dag.qubits), 'r')
         dag.add_qreg(reg)
