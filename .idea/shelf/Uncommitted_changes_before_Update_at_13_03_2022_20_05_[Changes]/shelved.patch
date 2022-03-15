@@ -1,0 +1,330 @@
+Index: main.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>import os\r\n\r\nfrom qiskit import QuantumCircuit, QuantumRegister, transpile, ClassicalRegister\r\nfrom qiskit.transpiler import PassManager, CouplingMap, Layout\r\nfrom qiskit.converters import circuit_to_dag, dag_to_circuit\r\nfrom sabre import Sabre\r\nfrom qiskit.test.mock.backends import FakeBrooklyn\r\n\r\n\r\n# author: Elias Foramitti\r\ndef get_layout_description_comment(layout, dag):\r\n    physical_qbits = []\r\n    virtual_bit_mapping = layout.get_virtual_bits()\r\n    # one could directly take layout.get_virtual_bits().values(),\r\n    # but that would not necessarily preserve the original ordering\r\n    # of virtual qubits resulting in a wrong layout description\r\n    for qreg in dag.qregs.values():\r\n        for qbit in qreg:\r\n            physical_qbits.append(virtual_bit_mapping[qbit])\r\n    return '// i ' + ' '.join(str(i) for i in physical_qbits)\r\n\r\n\r\n# author: Elias Foramitti\r\ndef get_circuit_cost(qc: QuantumCircuit) -> int:\r\n    instructions = [i[0] for i in qc]\r\n    cost = 0\r\n    for i, inst in enumerate(instructions):\r\n        if inst.name == 'sx' or inst.name == 'x':\r\n            cost += 1\r\n        elif inst.name == 'cx':\r\n            cost += 10\r\n        elif inst.name == 'swap':\r\n            cost += 30\r\n        elif (inst.name != 'rz' and inst.name != 'measure' and inst.name != 'barrier'):\r\n            print(f\"{i}th instruction '{inst.name}' not allowed\")\r\n    return cost\r\n\r\n\r\npm = PassManager()\r\ncoupling = [[0, 1], [0, 10], [1, 0], [1, 2], [2, 1], [2, 3], [3, 2], [3, 4], [4, 3], [4, 5], [4, 11], [5, 4], [5, 6],\r\n            [6, 5], [6, 7], [7, 6], [7, 8], [8, 7], [8, 9], [8, 12], [9, 8], [10, 0], [10, 13], [11, 4], [11, 17],\r\n            [12, 8], [12, 21], [13, 10], [13, 14], [14, 13], [14, 15], [15, 14], [15, 16], [15, 24], [16, 15], [16, 17],\r\n            [17, 11], [17, 16], [17, 18], [18, 17], [18, 19], [19, 18], [19, 20], [19, 25], [20, 19], [20, 21],\r\n            [21, 12], [21, 20], [21, 22], [22, 21], [22, 23], [23, 22], [23, 26], [24, 15], [24, 29], [25, 19],\r\n            [25, 33], [26, 23], [26, 37], [27, 28], [27, 38], [28, 27], [28, 29], [29, 24], [29, 28], [29, 30],\r\n            [30, 29], [30, 31], [31, 30], [31, 32], [31, 39], [32, 31], [32, 33], [33, 25], [33, 32], [33, 34],\r\n            [34, 33], [34, 35], [35, 34], [35, 36], [35, 40], [36, 35], [36, 37], [37, 26], [37, 36], [38, 27],\r\n            [38, 41], [39, 31], [39, 45], [40, 35], [40, 49], [41, 38], [41, 42], [42, 41], [42, 43], [43, 42],\r\n            [43, 44], [43, 52], [44, 43], [44, 45], [45, 39], [45, 44], [45, 46], [46, 45], [46, 47], [47, 46],\r\n            [47, 48], [47, 53], [48, 47], [48, 49], [49, 40], [49, 48], [49, 50], [50, 49], [50, 51], [51, 50],\r\n            [51, 54], [52, 43], [52, 56], [53, 47], [53, 60], [54, 51], [54, 64], [55, 56], [56, 52], [56, 55],\r\n            [56, 57], [57, 56], [57, 58], [58, 57], [58, 59], [59, 58], [59, 60], [60, 53], [60, 59], [60, 61],\r\n            [61, 60], [61, 62], [62, 61], [62, 63], [63, 62], [63, 64], [64, 54], [64, 63]]\r\n\r\nfilename = \"adder-3.qasm\"\r\ninput_path = './original/' + filename\r\n\r\nq = QuantumRegister(7, 'q')\r\nmeas = ClassicalRegister(7, 'meas')\r\nin_circ = QuantumCircuit(q, meas)\r\nin_circ.h(3)\r\nin_circ.cx(0, 6)\r\nin_circ.cx(6, 0)\r\nin_circ.cx(0, 1)\r\nin_circ.cx(3, 1)\r\nin_circ.cx(3, 0)\r\nin_circ.barrier(0, 1, 2, 3, 4, 5, 6)\r\nin_circ.measure(0, 0)\r\n\r\n\r\n\"\"\" own implementation \"\"\"\r\noutput_path1 = './mapped/own/' + filename\r\ncoupling_map = CouplingMap(couplinglist=coupling)\r\n\r\n# get quantum circuit from file\r\nqc = QuantumCircuit.from_qasm_file(path=input_path)\r\nmapper = Sabre(coupling_map, layout_strategy='sabre')\r\npm.append(mapper)\r\nqc_transpiled = pm.run(in_circ)\r\n\r\nprint(qc_transpiled.draw(output='text'))\r\n\r\n# add layout comment on top of output-.qasm\r\nlayout_comment = get_layout_description_comment(mapper.initial_layout, circuit_to_dag(qc_transpiled))\r\nqasm = qc_transpiled.qasm()\r\nqasm = qasm.replace('\\n', '\\n' + layout_comment + '\\n', 1)\r\nwith open(output_path1, \"w+\") as file:\r\n    file.write(qasm)\r\nfile.close()\r\n\r\nprint(\"Own cost : \", get_circuit_cost(qc_transpiled))\r\n\r\n\"\"\" qiskit standard \"\"\"\r\noutput_path2 = './mapped/benchmark/' + filename\r\nqc = QuantumCircuit.from_qasm_file(path=input_path)\r\nqc_transpiled = transpile(in_circ, backend=FakeBrooklyn())\r\n\r\n# print(qc_transpiled.draw(output='text'))\r\nqc_transpiled.qasm(filename=output_path2)\r\nprint(\"Standard cost: \", get_circuit_cost(qc_transpiled))\r\n
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/main.py b/main.py
+--- a/main.py	(revision 347ebb360665031f51f19b48c7ac861a82fd3ba2)
++++ b/main.py	(date 1646823854268)
+@@ -52,21 +52,10 @@
+             [56, 57], [57, 56], [57, 58], [58, 57], [58, 59], [59, 58], [59, 60], [60, 53], [60, 59], [60, 61],
+             [61, 60], [61, 62], [62, 61], [62, 63], [63, 62], [63, 64], [64, 54], [64, 63]]
+ 
+-filename = "adder-3.qasm"
++# TODO change filename to map algorithm
++filename = "adder-8.qasm"
+ input_path = './original/' + filename
+ 
+-q = QuantumRegister(7, 'q')
+-meas = ClassicalRegister(7, 'meas')
+-in_circ = QuantumCircuit(q, meas)
+-in_circ.h(3)
+-in_circ.cx(0, 6)
+-in_circ.cx(6, 0)
+-in_circ.cx(0, 1)
+-in_circ.cx(3, 1)
+-in_circ.cx(3, 0)
+-in_circ.barrier(0, 1, 2, 3, 4, 5, 6)
+-in_circ.measure(0, 0)
+-
+ 
+ """ own implementation """
+ output_path1 = './mapped/own/' + filename
+@@ -74,11 +63,10 @@
+ 
+ # get quantum circuit from file
+ qc = QuantumCircuit.from_qasm_file(path=input_path)
+-mapper = Sabre(coupling_map, layout_strategy='sabre')
++# initialize transformation pass
++mapper = Sabre(coupling_map, layout_strategy='trivial')
+ pm.append(mapper)
+-qc_transpiled = pm.run(in_circ)
+-
+-print(qc_transpiled.draw(output='text'))
++qc_transpiled = pm.run(qc)
+ 
+ # add layout comment on top of output-.qasm
+ layout_comment = get_layout_description_comment(mapper.initial_layout, circuit_to_dag(qc_transpiled))
+@@ -87,14 +75,6 @@
+ with open(output_path1, "w+") as file:
+     file.write(qasm)
+ file.close()
+-
+ print("Own cost : ", get_circuit_cost(qc_transpiled))
+ 
+-""" qiskit standard """
+-output_path2 = './mapped/benchmark/' + filename
+-qc = QuantumCircuit.from_qasm_file(path=input_path)
+-qc_transpiled = transpile(in_circ, backend=FakeBrooklyn())
+ 
+-# print(qc_transpiled.draw(output='text'))
+-qc_transpiled.qasm(filename=output_path2)
+-print("Standard cost: ", get_circuit_cost(qc_transpiled))
+Index: check.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/check.py b/check.py
+new file mode 100644
+--- /dev/null	(date 1646228597185)
++++ b/check.py	(date 1646228597185)
+@@ -0,0 +1,255 @@
++from qiskit.circuit import QuantumRegister, Qubit
++from qiskit.dagcircuit import DAGCircuit
++from qiskit.circuit.library import SwapGate
++from qiskit.transpiler.basepasses import TransformationPass
++from qiskit.transpiler import Layout, TranspilerError, CouplingMap
++from typing import List, Dict, Tuple
++
++
++# author: Elias Foramitti
++class Mapper(TransformationPass):
++    def __init__(self,
++                 coupling_map: CouplingMap):
++        """Maps a DAGCircuit onto a `coupling_map` using swap gates.
++
++        Args:
++            coupling_map (CouplingMap): Directed graph represented a coupling map.
++            initial_layout (Layout): initial layout of qubits in mapping
++        """
++        super().__init__()
++        coupling_map.make_symmetric()
++        self.coupling_map = coupling_map
++
++    def _check_coupling_map_adherence(self, layout: Layout, partition: List['set[Qubit]']) -> Tuple[
++        bool, 'set[Qubit]', Qubit, Qubit]:
++        """"Checks the adherence of a given layout to the coupling map given some partition (i.e. sets of qubits which nead to be next
++        to each other)
++
++        Returns:
++            Tuple[bool, 'set[Qubit]', Qubit, Qubit]: with the elements
++                - True if the layout is valid, False otherwise
++                - if the layout is invalid the partition set which is violated, else None
++                - if the layout is invalid the 2 qubits which are not next to each other, else None
++        """
++        for p in partition:
++            for q1 in p:
++                for q2 in p:
++                    if q1 is q2:
++                        continue
++                    if layout[q1] not in self.coupling_map.neighbors(layout[q2]):
++                        return False, p, q1, q2
++        return True, None, None, None
++
++    def _get_layers(self, dag: DAGCircuit) -> List[Dict]:
++        """"Splits a given DAGCircuit into layers. Each layer is described in a dictionary of form:
++
++        {
++            'graph': DAGCircuit containing the subcircuit,
++            'partition': List[set[Qubit]] describing which qubits have common operations in this layer
++                and therefore need to be next to each other in the layout,
++            'qbits': set[Qubit] a flat version of 'partition' i.e. all qubits that are part of multi-qubit
++                operations in this layer,
++            'barrier': bool which is True if this is a barrier layer (which can be ignored in the mapping process)
++        }"""
++        layers = []
++        for sl in dag.serial_layers():
++            if len(sl['partition']) == 0:
++                # barrier layer
++                layers.append({
++                    'graph': sl['graph'],
++                    'partition': [],
++                    'qbits': set(sl['graph'].qubits),
++                    'barrier': True
++                })
++            elif len(sl['partition'][0]) > 1:
++                # find last layer where >=1 of the same qbits are alreasy used
++                if len(layers) == 0:
++                    layers.append({
++                        'graph': sl['graph'],
++                        'partition': [set(sl['partition'][0])],
++                        'qbits': set(sl['partition'][0]),
++                        'barrier': False
++                    })
++                    continue
++                added_to_layer = False
++                for i in range(len(layers) - 1, -1, -1):
++                    overlap = False
++                    for qbit in sl['partition'][0]:
++                        if qbit in layers[i]['qbits']:
++                            overlap = True
++                            break
++                    if overlap:
++                        # if partitions match add gate to this layer, ...
++                        if set(sl['partition'][0]) in layers[i]['partition']:
++                            layers[i]['graph'].compose(sl['graph'], inplace=True)
++                        else:
++                            # ... else add it to the next (or create new layer if necessary)
++                            if i < len(layers) - 1:
++                                layers[i + 1]['graph'].compose(sl['graph'], inplace=True)
++                                layers[i + 1]['partition'].append(set(sl['partition'][0]))
++                                for qbit in sl['partition'][0]:
++                                    layers[i + 1]['qbits'].add(qbit)
++                            else:
++                                layers.append({
++                                    'graph': sl['graph'],
++                                    'partition': [set(sl['partition'][0])],
++                                    'qbits': set(sl['partition'][0]),
++                                    'barrier': False
++                                })
++                        added_to_layer = True
++                        break
++                if not added_to_layer:
++                    layers[0]['graph'].compose(sl['graph'], inplace=True)
++                    layers[0]['partition'].append(set(sl['partition'][0]))
++                    for qbit in sl['partition'][0]:
++                        layers[0]['qbits'].add(qbit)
++            else:
++                if len(layers) == 0:
++                    layers.append({
++                        'graph': sl['graph'],
++                        'partition': [],
++                        'qbits': set(),
++                        'barrier': False
++                    })
++                    continue
++                added_to_layer = False
++                for i in range(len(layers) - 1, -1, -1):
++                    if sl['partition'][0][0] in layers[i]['qbits']:
++                        # if partitions match add gate to this layer, ...
++                        layers[i]['graph'].compose(sl['graph'], inplace=True)
++                        added_to_layer = True
++                        break
++                if not added_to_layer:
++                    layers[0]['graph'].compose(sl['graph'], inplace=True)
++        return layers
++
++    def _check_init_layout(self, dag: DAGCircuit, layers: List[Dict]):
++        """Checks if the initial layout is set, sets it otherwise, and inspects the layout for validity"""
++        self.initial_layout = self._get_init_layout(dag, layers)
++
++        if len(dag.qubits) != len(self.initial_layout):
++            raise TranspilerError('The layout does not match the amount of qubits in the DAG')
++
++        if len(self.coupling_map.physical_qubits) < len(self.initial_layout):
++            raise TranspilerError(
++                "The initial layout cannot have more qubits than are available in the coupling map")
++        elif len(self.coupling_map.physical_qubits) > len(self.initial_layout):
++            # dirty hack!!! to match number of physical and virtual qubits -> just adding a rest register
++            name = 'r'
++            if name in dag.qregs.keys():
++                i = 0
++                while ('r' + str(i)) in dag.qregs.keys():
++                    i += 1
++                name = 'r' + str(i)
++            register = QuantumRegister(len(self.coupling_map.physical_qubits) - len(self.initial_layout), name)
++            dag.add_qreg(register)
++            for layer in layers:
++                layer['graph'].add_qreg(register)
++            self.initial_layout.add_register(register)
++
++    def _get_init_layout(self, dag: DAGCircuit, layers: List[Dict]) -> Layout:
++        """Should find an initial mapping.
++
++        Args:
++            dag (DAGCircuit): the complete circuit to be mapped
++            layers (List[Dict]): the circuit split into individual layers containing only operations
++                that can be executed concurrently (i.e. no swaps needed inbetween). Each layer is
++                described by a dictionary of form:
++                    {
++                        'graph': DAGCircuit containing the subcircuit,
++                        'partition': List[set[Qubit]] describing which qubits have common operations
++                            in this layer and therefore need to be next to each other in the layout,
++                        'qbits': set[Qubit] a flat version of 'partition' i.e. all qubits that are part
++                            of multi-qubit operations in this layer,
++                        'barrier': bool which is True if this is a barrier layer (which can be ignored
++                            in the mapping process)
++                    }
++        """
++        return Layout.generate_trivial_layout(*dag.qregs.values())
++
++    def _get_swaps(self, dag: DAGCircuit, layers: List[Dict]) -> List[List[Tuple[int]]]:
++        """Should find the necessary swaps before each layer.
++        !Important!: Also the first layer can have swaps before it, if you do not need swaps before the
++            first layer you still must provide an empty list at index 0
++
++        Args:
++            dag (DAGCircuit): the complete circuit to be mapped
++            layers (List[Dict]): the circuit split into individual layers containing only operations
++                that can be executed concurrently (i.e. no swaps needed inbetween). Each layer is
++                described by a dictionary of form:
++                    {
++                        'graph': DAGCircuit containing the subcircuit,
++                        'partition': List[set[Qubit]] describing which qubits have common operations
++                            in this layer and therefore need to be next to each other in the layout,
++                        'qbits': set[Qubit] a flat version of 'partition' i.e. all qubits that are part
++                            of multi-qubit operations in this layer,
++                        'barrier': bool which is True if this is a barrier layer (which can be ignored
++                            in the mapping process)
++                    }
++
++        Returns:
++            List[List[Tuple[int]]]: Each sub list describes the permutation (i.e. the swaps) necessary
++                before the respective layer, e.g. [(0,1),(1,2)] would change the current layout [a,b,c]
++                of qubits a, b, and c to [b,c,a]
++        """
++        return [[]] * len(layers)
++
++    def run(self, dag: DAGCircuit) -> DAGCircuit:
++        layers = self._get_layers(dag)
++
++        self._check_init_layout(dag, layers)
++
++        swaps = self._get_swaps(dag, layers)
++
++        if len(swaps) != len(layers):
++            raise TranspilerError('length of swaps list does not match number of layers')
++        physical_qs = self.initial_layout.get_physical_bits().keys()
++        for i, l in enumerate(swaps):
++            for j, s in enumerate(l):
++                if len(s) != 2:
++                    raise TranspilerError(
++                        f'{j}th swap tuple in {i}th layer does not contain 2 elements: {s} in {swaps}')
++                s0, s1 = s
++                if s0 not in physical_qs:
++                    raise TranspilerError(
++                        f'{s0} in {j}th swap tuple in {i}th layer is not a valid physical qubit: {s} in {swaps}')
++                if s1 not in physical_qs:
++                    raise TranspilerError(
++                        f'{s1} in {j}th swap tuple in {i}th layer is not a valid physical qubit: {s} in {swaps}')
++
++        new_dag = DAGCircuit()
++        for qreg in dag.qregs.values():
++            new_dag.add_qreg(qreg)
++        for creg in dag.cregs.values():
++            new_dag.add_creg(creg)
++
++        current_layout = self.initial_layout.copy()
++        canonical_registers = list(dag.qregs.values())
++
++        for i, layer in enumerate(layers):
++            if len(swaps[i]) > 0:
++                swap_layer = DAGCircuit()
++                for r in canonical_registers:
++                    swap_layer.add_qreg(r)
++                for s in swaps[i]:
++                    swap_layer.apply_operation_back(SwapGate(),
++                                                    qargs=[current_layout[s[0]], current_layout[s[1]]],
++                                                    cargs=[])
++
++                # swap layer insertion
++                order = current_layout.reorder_bits(new_dag.qubits)
++                new_dag.compose(swap_layer, qubits=order, inplace=True)
++
++                # update current_layout
++                for s in swaps[i]:
++                    current_layout.swap(s[0], s[1])
++            valid, violated_partition, q1, q2 = self._check_coupling_map_adherence(current_layout, layer['partition'])
++            if not valid:
++                raise TranspilerError(
++                    f'layout before {i}th layer does not adhere to the coupling map: {q1} and {q2} from partition ' +
++                    f'{violated_partition} are not next to each other in {current_layout}')
++            # layer insertion
++            order = current_layout.reorder_bits(new_dag.qubits)
++            new_dag.compose(layer['graph'], qubits=order, inplace=True)
++
++        return new_dag
+\ No newline at end of file
