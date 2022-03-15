@@ -10,14 +10,15 @@ from qiskit.transpiler import Layout
 # Devices,” https://pypi.org/project/quantum-qubit-mapping/, pp. 4–7, 2019
 class Sabre(TransformationPass):
 
-    def __init__(self, coupling_map, layout_strategy='trivial'):
+    def __init__(self, coupling_map, layout_strategy='trivial', swap_choose_strategy='tivial'):
         super().__init__()
         self.coupling_map = coupling_map
         self.initial_layout: Layout = []
         self.layout_strategy = layout_strategy
+        self.swap_choose_strategy = swap_choose_strategy
 
-    #TODO not necessary maybe further research
-    def generate_heuristic_layout(self, dag ):
+    # TODO not necessary maybe further research
+    def generate_heuristic_layout(self, dag):
         layout: Layout
 
         return layout
@@ -38,13 +39,13 @@ class Sabre(TransformationPass):
         layout: Layout
 
         # get the initial layout from the dag based on different strategies
-        if(self.layout_strategy == 'trivial'):
+        if (self.layout_strategy == 'trivial'):
             layout = Layout.generate_trivial_layout(*dag.qregs.values())
-        elif(self.layout_strategy == 'sabre'):
+        elif (self.layout_strategy == 'sabre'):
             # we need a sabre-swap run with an initial trivial layout in order to use an optimized mapping
             layout = Layout.generate_trivial_layout(*dag.qregs.values())
             layout = self.generate_sabre_layout(dag, front_layer.copy(), layout)
-        elif(self.layout_strategy == 'heuristic'):
+        elif (self.layout_strategy == 'heuristic'):
             layout = self.generate_heuristic_layout(dag)
 
         self.initial_layout = layout.copy()
@@ -74,7 +75,15 @@ class Sabre(TransformationPass):
                     swaps.append({'q1': qubit, 'q2': layout[n], 'gate': gate})
 
         # sort the list by q1 and then by q2 index
-        return sorted(swaps, key=lambda s: (s.get('q1').index, s.get('q2').index))
+
+        # note: there is a randomness to a certain degree when choosing from a list with multiple swaps
+        # having the same score
+        # i also noticed that i can generate better results when keeping the feature/bug ;)
+        if self.swap_choose_strategy == 'rand':
+            return swaps
+        else:
+            return sorted(swaps, key=lambda s: (s.get('q1').index, s.get('q2').index,
+                                                s.get('q1').register.name, s.get('q2').register.name))
 
     # calculate the cumulative distance between all elements of the front layer and their successors after a
     # potential swap
@@ -139,7 +148,7 @@ class Sabre(TransformationPass):
 
                 # chose the swap action with the minimal distance (score) after the gates switched position
                 min_swap = min(score, key=lambda s: s['distance'])['op']
-                print(min_swap['q1'])
+
                 # get physical bits by index of logical bit
                 swap_node = DAGOpNode(op=SwapGate(), qargs=[
                     dag.qubits[layout._v2p[min_swap['q1']]],

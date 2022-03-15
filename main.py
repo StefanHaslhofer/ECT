@@ -1,12 +1,10 @@
 import os
 
-from qiskit import QuantumCircuit, QuantumRegister, transpile, ClassicalRegister
+from qiskit import QuantumCircuit
 from qiskit.transpiler import PassManager, CouplingMap, Layout
-from qiskit.converters import circuit_to_dag, dag_to_circuit
-
+from qiskit.converters import circuit_to_dag
 from helper import get_layout_description_comment, get_circuit_cost, check_qubit_connectivity
 from sabre import Sabre
-from qiskit.test.mock.backends import FakeBrooklyn
 
 coupling = [[0, 1], [0, 10], [1, 0], [1, 2], [2, 1], [2, 3], [3, 2], [3, 4], [4, 3], [4, 5], [4, 11], [5, 4], [5, 6],
             [6, 5], [6, 7], [7, 6], [7, 8], [8, 7], [8, 9], [8, 12], [9, 8], [10, 0], [10, 13], [11, 4], [11, 17],
@@ -37,7 +35,18 @@ for filename in os.listdir(input_directory):
 
         # get quantum circuit from file
         qc = QuantumCircuit.from_qasm_file(path=input_path)
-        mapper = Sabre(coupling_map, layout_strategy='trivial')
+
+        """
+        layout_strategy: 
+            'sabre': run the sabre algorithm twice and use the result-mapping from the first run as the input 
+                for the second (better performance)
+            'trivial': use a one-to-one mapping of physical to logical qubits
+        
+        swap_choose_strategy:
+            'rand': retain a minimal randomness factor when choosing a swap (better performance)
+            'trivial': take the first swap by score and name
+        """
+        mapper = Sabre(coupling_map, layout_strategy='sabre', swap_choose_strategy='rand')
         pm.append(mapper)
         qc_transpiled = pm.run(qc)
 
@@ -58,3 +67,5 @@ for filename in os.listdir(input_directory):
                                  Layout.generate_trivial_layout(*circuit_to_dag(qc_transpiled).qregs.values()),
                                  coupling_map):
             print(filename, " is valid")
+
+        qc_transpiled.qasm(filename=output_path)
